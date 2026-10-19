@@ -1,0 +1,343 @@
+====================================================================
+  CHATA (REMOLQUE) ENGANCHADA AL AUTO - EXPLICACIÓN Y GUÍA DE CAMBIOS
+====================================================================
+
+Proyecto: Ciudad y conducción con OpenGL (Java 17 + LWJGL).
+Todo el código de la chata está en:
+    src/main/java/com/graphics/clase2.java
+Las pruebas están en:
+    src/test/java/com/graphics/ConduccionTest.java
+
+Como clase3 y clase4 heredan de clase2, la chata aparece en las
+etapas 2, 3 y 4 del juego (también en el minimapa y con sombra).
+
+
+--------------------------------------------------------------------
+1. QUÉ SE HIZO
+--------------------------------------------------------------------
+
+Se agregó al auto del jugador una chata de madera de un eje, como la
+de la foto de referencia, con física propia:
+
+  - Lanza y enganche: la chata se une al auto con una lanza de metal
+    que gira en la bola de enganche, detrás del paragolpes.
+  - Sigue al auto al girar: no se mueve pegada como un bloque rígido;
+    describe su propio arco por dentro de la curva, como un remolque real.
+  - Colisiones propias: la chata choca contra manzanas, aceras y
+    bordes del mapa con un rectángulo del mismo tamaño que el dibujo.
+  - Si la chata choca, el auto se frena: no puede seguir en esa
+    dirección, pero puede ir en otra para soltarse.
+  - La chata no puede meterse dentro del auto: si al girar o retroceder
+    las dos carrocerías se tocarían, el movimiento se rechaza.
+  - Límite de tijera: el ángulo entre auto y chata no pasa de 40°.
+  - Asistente de reversa: al retroceder, el auto contragira solo para
+    que la chata vaya recta (sin teclas) o hacia el lado de A/D.
+  - Peso: con la chata, el auto acelera, frena y retrocede más despacio.
+  - Física en pasos cortos (1/120 s): se comporta igual con 20 o con
+    60 cuadros por segundo.
+  - Reinicio: la tecla R vuelve a colocar auto y chata en el inicio.
+  - Pruebas automáticas de choque, giro, reversa y reinicio.
+
+
+--------------------------------------------------------------------
+2. CÓMO FUNCIONA (EXPLICACIÓN)
+--------------------------------------------------------------------
+
+2.1 Variables de la chata (arriba de clase2.java)
+
+    chataX, chataZ   Centro de la chata (coincide con el eje de las ruedas).
+    anguloChata      Hacia dónde apunta la chata. Usa la misma regla que
+                     el auto: 0 = mirando al norte (-Z).
+
+2.2 Medidas (constantes al inicio de clase2.java)
+
+    ENGANCHE_AUTO = 1.37      Distancia del centro del auto a la bola de enganche.
+    LARGO_LANZA   = 0.65      Largo de la lanza (del enganche al frente de la caja).
+    ANCHO_CHATA   = 2.12      Ancho total para colisiones (incluye ruedas).
+    LARGO_CHATA   = 2.00      Largo de la caja para colisiones.
+    ENGANCHE_A_CENTRO_CHATA   Se calcula solo: LARGO_LANZA + LARGO_CHATA / 2.
+
+2.3 El ciclo de cada cuadro
+
+    actualizar()            Lee el teclado (W/S, A/D, Espacio).
+          |
+    actualizarConjunto()    Divide el tiempo del cuadro en pasos de 1/120 s.
+          |
+    simularPaso()           En cada paso:
+       a) Calcula la velocidad (acelerador, roce, freno y límites).
+       b) Calcula el giro. En reversa usa volanteReversa().
+       c) Propone la nueva posición del auto.
+       d) posicionChata() calcula dónde quedaría la chata.
+       e) Comprueba 4 condiciones:
+            1. puedeCircular()         el auto no choca con la ciudad.
+            2. puedeCircularChata()    la chata no choca con la ciudad.
+            3. chataNoInvadeAuto()     la chata no se mete en el auto.
+            4. articulacionPermitida() no se pasa del límite de tijera.
+       f) Si se cumplen las 4, auto y chata se mueven juntos.
+          Si falla alguna, ninguno se mueve y la velocidad queda en 0.
+          Por eso, si la chata choca, el auto se frena; pero en el paso
+          siguiente puedes ir hacia otro lado, porque se vuelve a comprobar.
+
+2.4 Cómo sigue la chata al auto (posicionChata)
+
+    Las ruedas de un remolque no se deslizan de lado: solo ruedan hacia
+    donde apunta la lanza. Es como arrastrar un palo por el suelo:
+    cuando el enganche se mueve, la chata gira para apuntar hacia donde
+    quedó el enganche y se coloca a la misma distancia de siempre.
+    Así, al doblar, la chata hace su propio arco por dentro de la curva,
+    y al avanzar recto se va enderezando sola.
+
+2.5 Por qué hace falta el asistente de reversa (volanteReversa)
+
+    En reversa pasa lo contrario: cualquier ángulo pequeño crece solo
+    hasta que la chata se dobla contra el auto (efecto tijera). Un
+    conductor lo evita girando el volante al lado contrario.
+    volanteReversa() hace eso automáticamente: calcula cuánto girar
+    para llevar la chata al ángulo pedido.
+       - Sin A/D: la chata va recta.
+       - Con A o D: la chata se dobla hacia ese lado (hasta 17°).
+    Hacia adelante no interviene: el volante es el del jugador.
+
+2.6 Colisiones
+
+    - Chata contra ciudad: rectángulo girado (ANCHO_CHATA x LARGO_CHATA)
+      contra cada manzana de 10 x 10. Se usa el "teorema del eje
+      separador" (rectangulosSeCruzan): si en algún eje las sombras de
+      los dos rectángulos no se tocan, no hay choque. Las 4 esquinas
+      también deben quedar dentro del mapa (de -55 a 55).
+    - Chata contra auto: el mismo método, con el rectángulo del auto.
+    - Auto contra ciudad: el círculo original del auto (RADIO_AUTO).
+
+2.7 Dibujo (dibujarChata, dibujarRuedaChata, piezaChata)
+
+    Todo el modelo está hecho con cajas. Cada pieza se dibuja con:
+
+        piezaChata(MATERIAL, x, y, z, ancho, alto, largo, rojo, verde, azul);
+
+    Las coordenadas x, y, z son locales de la chata:
+        x  = hacia los costados (+ derecha, - izquierda).
+        y  = altura desde el suelo.
+        z  = a lo largo (- hacia el auto / adelante, + hacia atrás).
+        El punto (0, 0, 0) es el centro de la chata, en el suelo.
+    ancho, alto y largo son el tamaño completo de la caja.
+    Una pieza está centrada en (x, y, z), así que ocupa desde
+    y - alto/2 hasta y + alto/2 (lo mismo con x y z).
+
+    Piezas actuales (en el orden en que aparecen en dibujarChata):
+
+    Pieza              Material  x        y      z         ancho alto  largo  Color (R,G,B)
+    -----------------  --------  -------  -----  --------  ----  ----  -----  ------------------
+    Lanza              METAL     (calc.)  0.48   (calc.)   0.12  0.12  calc.  0.12, 0.15, 0.17
+    Chasis             METAL     0        0.36   0         1.62  0.14  2.05   0.16, 0.19, 0.21
+    Piso               MADERA    0        0.48   0         1.48  0.12  1.88   0.52, 0.29, 0.12
+    Laterales (x2)     MADERA    ±0.74    0.875  0         0.10  0.66  1.96   0.52, 0.30, 0.13
+    Postes (x6)        METAL     ±0.81    0.935  0, ±0.92  0.10  0.75  0.10   0.10, 0.13, 0.15
+    Frente y fondo     MADERA    0        0.875  ±0.94     1.38  0.66  0.10   0.52, 0.30, 0.13
+    Neumáticos (x2)    LISO      ±0.93    0.275  0         0.22  0.55  0.62   0.035, 0.043, 0.052
+    Llantas (x2)       METAL     ±1.04    0.275  0         0.04  0.27  0.27   0.61, 0.65, 0.69
+
+    La lanza se calcula sola entre el enganche y el frente de la caja:
+    si cambias LARGO_LANZA o LARGO_CHATA, la lanza se ajusta sola.
+
+
+--------------------------------------------------------------------
+3. CÓMO CAMBIAR LA APARIENCIA
+--------------------------------------------------------------------
+
+3.1 Cambiar el color
+
+    Los colores son los 3 últimos números de cada pieza (rojo, verde,
+    azul), cada uno entre 0 y 1. Ejemplos:
+
+      Madera más clara (pino):   0.70f, 0.48f, 0.25f
+      Madera oscura (nogal):     0.35f, 0.20f, 0.10f
+      Gris:                      0.50f, 0.50f, 0.50f
+      Negro:                     0.05f, 0.05f, 0.05f
+      Blanco:                    0.90f, 0.90f, 0.90f
+      Azul:                      0.15f, 0.35f, 0.75f
+      Verde:                     0.20f, 0.55f, 0.25f
+      Amarillo:                  0.95f, 0.75f, 0.15f
+
+    Ejemplo: piso más claro. En dibujarChata cambia
+        piezaChata(Materiales.MADERA, 0, 0.48f, 0, 1.48f, 0.12f, 1.88f, 0.52f, 0.29f, 0.12f);
+    por
+        piezaChata(Materiales.MADERA, 0, 0.48f, 0, 1.48f, 0.12f, 1.88f, 0.70f, 0.48f, 0.25f);
+
+    Para que toda la madera cambie igual, modifica el color del piso,
+    de los laterales y del frente/fondo (son tres líneas).
+
+3.2 Cambiar el material (textura y brillo)
+
+    El primer parámetro elige el material. Están en Materiales.java:
+      Materiales.MADERA   vetas de madera (actual).
+      Materiales.METAL    brillo metálico.
+      Materiales.PINTURA  pintura lisa y brillante (como el auto).
+      Materiales.LISO     sin textura, mate.
+      Otros: LADRILLO, ESTUCO, ACERA, CESPED, HOJAS, CRISTAL, ASFALTO.
+
+    Ejemplo: chata pintada de azul en vez de madera. Cambia en piso,
+    laterales y frente/fondo:
+        Materiales.MADERA, ... 0.52f, 0.30f, 0.13f
+    por
+        Materiales.PINTURA, ... 0.15f, 0.35f, 0.75f
+
+3.3 Alargar o acortar la chata
+
+    Ejemplo: pasar de 2.00 a 2.60 de largo (diferencia = +0.60).
+    Regla: suma la diferencia a cada "largo" y la MITAD de la
+    diferencia (0.30) a cada posición z que no sea 0.
+
+      1. LARGO_CHATA = 2.60f            (antes 2.00f)
+      2. Chasis:          largo 2.05 -> 2.65
+      3. Piso:            largo 1.88 -> 2.48
+      4. Laterales:       largo 1.96 -> 2.56
+      5. Frente y fondo:  z ±0.94   -> ±1.24
+      6. Postes:          z -0.92/0/0.92 -> -1.22/0/1.22
+
+    Para acortar, haz lo mismo restando.
+
+3.4 Hacerla más ancha o más angosta
+
+    Ejemplo: 0.40 más ancha (diferencia = +0.40, mitad = 0.20).
+    Regla: suma la diferencia a cada "ancho" y la mitad a cada x con ±.
+
+      1. ANCHO_CHATA = 2.52f            (antes 2.12f)
+      2. Chasis:          ancho 1.62 -> 2.02
+      3. Piso:            ancho 1.48 -> 1.88
+      4. Frente y fondo:  ancho 1.38 -> 1.78
+      5. Laterales:       x ±0.74 -> ±0.94
+      6. Postes:          x ±0.81 -> ±1.01
+      7. Neumáticos:      x ±0.93 -> ±1.13   (en dibujarRuedaChata)
+      8. Llantas:         x ±1.04 -> ±1.24   (en dibujarRuedaChata)
+
+3.5 Paredes más altas o más bajas
+
+    Las paredes empiezan sobre el piso, en y = 0.545.
+    Para una altura nueva h:  alto = h   e   y = 0.545 + h / 2.
+      Ejemplo h = 0.90:  alto 0.90, y = 0.995  (laterales y frente/fondo)
+    Postes: alto = h + 0.09   e   y = 0.56 + alto / 2.
+      Ejemplo:           alto 0.99, y = 1.055
+
+3.6 Agrandar o achicar todo el modelo (escala)
+
+    Multiplica por el mismo factor f (por ejemplo f = 0.8 para achicar
+    un 20 %):
+      - Todos los x, z, anchos y largos de las piezas.
+      - ANCHO_CHATA y LARGO_CHATA.
+      - Si también quieres cambiar la altura, multiplica los y y los
+        altos. Para que las ruedas sigan apoyadas en el suelo, el y de
+        la rueda debe ser la mitad de su alto.
+
+3.7 Ruedas más grandes o más chicas
+
+    Diámetro d (ahora 0.55):
+      Neumático:  alto = d,  largo ≈ d + 0.07,  y = d / 2
+      Llanta:     alto = largo ≈ d / 2,         y = d / 2
+    Si la rueda crece mucho, sube también el chasis, el piso y las
+    paredes para que no se crucen con ella.
+
+3.8 Lanza más larga o más corta
+
+    Cambia LARGO_LANZA (ahora 0.65). La lanza se dibuja sola.
+    Grosor y altura de la lanza: en dibujarChata, en la llamada a
+    cajaGiradaMaterial (0.48f = altura; 0.12f, 0.12f = grosor).
+    Con una lanza más corta, la chata toca el auto con menos ángulo.
+
+3.9 Color del auto
+
+    En dibujarAuto():
+        dibujarVehiculo(autoX, autoZ, angulo, 0.88f, 0.20f, 0.09f, ...);
+    Los tres números son el color (ahora rojo).
+
+
+--------------------------------------------------------------------
+4. CÓMO CAMBIAR LA FÍSICA
+--------------------------------------------------------------------
+
+    Qué cambiar                         Dónde                         Valor actual
+    ----------------------------------  ----------------------------  ------------
+    Aceleración del motor con chata     simularPaso: "* 6.5f"         6.5
+    Roce normal / con freno             simularPaso: resistencia      1.0 / 8
+    Velocidad máxima adelante / atrás   simularPaso: Math.max(...)    12 / -4.5
+    Cuánto gira el auto                 simularPaso: "0.11f"          0.11
+    Ángulo máximo de tijera             MAX_ANGULO_ARTICULACION       0.70 (40°)
+    Ángulo de la chata con A/D atrás    ANGULO_REVERSA                0.30 (17°)
+    Rapidez de corrección en reversa    CORRECCION_REVERSA            1.2
+    Giro máximo del asistente           VOLANTE_MAXIMO_REVERSA        2
+    Tamaño del paso de física           PASO_FISICA                   1/120 s
+
+    Los ángulos están en radianes: grados = radianes x 57.3.
+
+    Para quitar el asistente de reversa (comportamiento real sin ayuda,
+    en el que la chata se dobla sola), cambia en simularPaso:
+        float volante = velocidad < 0 ? volanteReversa(direccion) : direccion;
+    por
+        float volante = direccion;
+
+
+--------------------------------------------------------------------
+5. CUIDADOS AL CAMBIAR MEDIDAS
+--------------------------------------------------------------------
+
+  a) Dibujo y colisión deben coincidir. ANCHO_CHATA y LARGO_CHATA son
+     lo que usan los choques; los números de piezaChata son solo el
+     dibujo. Si el dibujo es más grande, la chata se mete en las aceras
+     sin chocar; si es más chico, se frena antes de tocar.
+
+  b) La chata tiene que caber detrás del auto al empezar. El auto parte
+     en z = 50 y el borde del mapa está en z = 55. Debe cumplirse:
+         51.37 + LARGO_LANZA + LARGO_CHATA <= 55
+     (ahora: 51.37 + 0.65 + 2.00 = 54.02). Si no se cumple, la chata
+     nace fuera del mapa y el auto no se puede mover.
+
+  c) Una chata más ancha o con lanza más corta toca el auto con menos
+     ángulo. Si notas que se frena muy pronto al girar, baja
+     MAX_ANGULO_ARTICULACION y ANGULO_REVERSA.
+
+  d) Algunas pruebas usan las medidas actuales. Si cambias LARGO_LANZA
+     o LARGO_CHATA, actualiza en ConduccionTest.java:
+       - 53.02f  (testChataTieneColisionPropia) = 50 + 1.37 + centro
+       - 3.02f   (testFisicaChataGiroYFrecuencia) = 1.37 + centro
+       - 1.65f   (conChataArticulada) = LARGO_LANZA + LARGO_CHATA / 2
+       - 51.1f   (testChataChocaYFrenaAlAuto): hasta dónde retrocede
+                 el auto antes de que la chata toque el borde sur.
+     Cambiar solo colores o materiales no afecta las pruebas.
+
+
+--------------------------------------------------------------------
+6. CÓMO PROBAR
+--------------------------------------------------------------------
+
+  Ejecutar el juego completo:      .\run_clase4.bat
+  Ejecutar las pruebas:            .\mvnw.cmd test
+
+  Recorrido sugerido:
+    1. Avanza y dobla en un cruce: la chata hace un arco por dentro.
+    2. Retrocede sin teclas: la chata va recta.
+    3. Retrocede con A o D: la chata se dobla hacia ese lado y el auto
+       sigue moviéndose.
+    4. Lleva la chata contra una acera: el auto se frena; luego sal
+       hacia otro lado.
+    5. Presiona R: auto y chata vuelven al inicio.
+
+  Pruebas automáticas de la chata (ConduccionTest.java):
+    testChataTieneColisionPropia      inicio válido, choque con manzana,
+                                      límite de tijera y reinicio.
+    testFisicaChataGiroYFrecuencia    sigue la curva; igual a 20 y 60 FPS.
+    testChataChocaYFrenaAlAuto        la chata choca y el auto se frena.
+    testReversaRectaEnderezaLaChata   en reversa recta la chata se endereza.
+    testReversaConDireccionDoblaLaChata  en reversa con A, la chata se
+                                      dobla a 17° y el auto no se detiene.
+
+
+--------------------------------------------------------------------
+7. LÍMITES ACTUALES
+--------------------------------------------------------------------
+
+  - Los autos del tráfico atraviesan la chata (igual que al auto del
+    jugador: el proyecto no tiene choques entre vehículos).
+  - La chata no se puede desenganchar.
+  - La chata no tiene luces traseras.
+  - El asistente de reversa solo puede corregir ángulos de hasta unos
+    35°. Si la chata está más doblada, el auto se frena y hay que avanzar
+    un poco para enderezarla.
